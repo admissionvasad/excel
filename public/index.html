@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Excel + PDF Match Dashboard</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background: #f4f7fb;
+        color: #1f2937;
+      }
+      .container {
+        max-width: 960px;
+        margin: 40px auto;
+        padding: 24px;
+        background: white;
+        border-radius: 14px;
+        box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+      }
+      h1 {
+        margin-top: 0;
+        font-size: 2rem;
+      }
+      label {
+        display: block;
+        margin: 18px 0 6px;
+        font-weight: 600;
+      }
+      input[type=file] {
+        display: block;
+      }
+      button {
+        margin-top: 18px;
+        padding: 12px 20px;
+        font-size: 16px;
+        background: #2563eb;
+        color: white;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .grid {
+        display: grid;
+        gap: 18px;
+        grid-template-columns: 1fr;
+      }
+      .card {
+        background: #f8fafc;
+        padding: 18px;
+        border-radius: 14px;
+        border: 1px solid #e2e8f0;
+      }
+      .result-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 12px;
+      }
+      .result-table th,
+      .result-table td {
+        border: 1px solid #cbd5e1;
+        padding: 10px 12px;
+        text-align: left;
+      }
+      .result-table th {
+        background: #e2e8f0;
+      }
+      .result-table tbody tr:nth-child(even) {
+        background: #f8fafc;
+      }
+      .card h2 {
+        margin-top: 0;
+        font-size: 1.1rem;
+      }
+      .list {
+        list-style: none;
+        padding-left: 0;
+        margin: 0;
+      }
+      .list li {
+        padding: 8px 10px;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .list li:last-child {
+        border-bottom: none;
+      }
+      .summary {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .chip {
+        display: inline-block;
+        padding: 12px 16px;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #1e3a8a;
+        font-weight: 700;
+        margin-bottom: 16px;
+      }
+      .status {
+        margin-top: 18px;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Excel + PDF Match Dashboard</h1>
+      <p>Upload two Excel files. The dashboard will show rows that match and rows that do not match across the files.</p>
+
+      <form id="uploadForm">
+        <label for="excelFile1">Excel file 1</label>
+        <input id="excelFile1" name="excelFile1" type="file" accept=".xlsx,.xls" required />
+
+        <label for="excelFile2">Excel file 2</label>
+        <input id="excelFile2" name="excelFile2" type="file" accept=".xlsx,.xls" required />
+
+        <button type="submit">Upload and Match</button>
+      </form>
+
+      <div class="status" id="status"></div>
+      <div class="chip" id="branchName">Branch: loading...</div>
+
+      <div class="grid" id="dashboard" style="display:none;">
+        <div class="card">
+          <h2>Summary</h2>
+          <div class="summary">
+            <div class="chip" id="totalCount">Total Excel records: 0</div>
+            <div class="chip" id="matchedCount">Matched: 0</div>
+            <div class="chip" id="notMatchedCount">Not matched: 0</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Matched records</h2>
+          <table class="result-table" id="matchedTable">
+            <thead>
+              <tr>
+                <th>Method</th>
+                <th>File 1 App No.</th>
+                <th>File 1 Name</th>
+                <th>File 1 Mobile</th>
+                <th>File 2 App No.</th>
+                <th>File 2 Name</th>
+                <th>File 2 Mobile</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>Only in file 1</h2>
+          <table class="result-table" id="onlyInFirstTable">
+            <thead>
+              <tr>
+                <th>Application No.</th>
+                <th>Name</th>
+                <th>Mobile</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>Only in file 2</h2>
+          <table class="result-table" id="onlyInSecondTable">
+            <thead>
+              <tr>
+                <th>Application No.</th>
+                <th>Name</th>
+                <th>Mobile</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const form = document.getElementById('uploadForm');
+      const statusEl = document.getElementById('status');
+      const dashboard = document.getElementById('dashboard');
+      const totalCount = document.getElementById('totalCount');
+      const matchedCount = document.getElementById('matchedCount');
+      const notMatchedCount = document.getElementById('notMatchedCount');
+      const branchNameChip = document.getElementById('branchName');
+      const matchedTable = document.getElementById('matchedTable').querySelector('tbody');
+      const onlyInFirstTable = document.getElementById('onlyInFirstTable').querySelector('tbody');
+      const onlyInSecondTable = document.getElementById('onlyInSecondTable').querySelector('tbody');
+
+      function addRecordRow(tableBody, record) {
+        const row = document.createElement('tr');
+        const applicationCell = document.createElement('td');
+        const nameCell = document.createElement('td');
+        const mobileCell = document.createElement('td');
+
+        applicationCell.textContent = record.applicationNumber || '-';
+        nameCell.textContent = record.name || '-';
+        mobileCell.textContent = record.mobileNumber || '-';
+
+        row.appendChild(applicationCell);
+        row.appendChild(nameCell);
+        row.appendChild(mobileCell);
+        tableBody.appendChild(row);
+      }
+
+      function addMatchRow(tableBody, match) {
+        const row = document.createElement('tr');
+        const methodCell = document.createElement('td');
+        const file1AppCell = document.createElement('td');
+        const file1NameCell = document.createElement('td');
+        const file1MobileCell = document.createElement('td');
+        const file2AppCell = document.createElement('td');
+        const file2NameCell = document.createElement('td');
+        const file2MobileCell = document.createElement('td');
+
+        methodCell.textContent = match.method || '-';
+        file1AppCell.textContent = match.first.applicationNumber || '-';
+        file1NameCell.textContent = match.first.name || '-';
+        file1MobileCell.textContent = match.first.mobileNumber || '-';
+        file2AppCell.textContent = match.second.applicationNumber || '-';
+        file2NameCell.textContent = match.second.name || '-';
+        file2MobileCell.textContent = match.second.mobileNumber || '-';
+
+        row.appendChild(methodCell);
+        row.appendChild(file1AppCell);
+        row.appendChild(file1NameCell);
+        row.appendChild(file1MobileCell);
+        row.appendChild(file2AppCell);
+        row.appendChild(file2NameCell);
+        row.appendChild(file2MobileCell);
+        tableBody.appendChild(row);
+      }
+
+      function addEmptyRow(tableBody, columns, message) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = columns;
+        cell.textContent = message;
+        cell.style.textAlign = 'center';
+        cell.style.color = '#6b7280';
+        row.appendChild(cell);
+        tableBody.appendChild(row);
+      }
+
+      async function refreshBranchName() {
+        try {
+          const response = await fetch('/branch');
+          const result = await response.json();
+          branchNameChip.textContent = `Branch: ${result.branchName || 'unknown'}`;
+        } catch (error) {
+          branchNameChip.textContent = 'Branch: unknown';
+        }
+      }
+
+      refreshBranchName();
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        statusEl.textContent = 'Uploading files...';
+        dashboard.style.display = 'none';
+        matchedTable.innerHTML = '';
+        onlyInFirstTable.innerHTML = '';
+        onlyInSecondTable.innerHTML = '';
+
+        const formData = new FormData(form);
+        const submitButton = form.querySelector('button[type=submit]');
+        submitButton.disabled = true;
+
+        try {
+          const response = await fetch('/upload', {
+            method: 'POST',
+            body: formData,
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            throw new Error(result.error || 'Upload failed');
+          }
+
+          totalCount.textContent = `File 1 records: ${result.totalFirst}, File 2 records: ${result.totalSecond}`;
+          matchedCount.textContent = `Matched: ${result.matched.length}`;
+          notMatchedCount.textContent = `Only in file 1: ${result.onlyInFirst.length}, only in file 2: ${result.onlyInSecond.length}`;
+          branchNameChip.textContent = `Branch: ${result.branchName || 'unknown'}`;
+
+          if (result.matched.length) {
+            result.matched.forEach((match) => addMatchRow(matchedTable, match));
+          } else {
+            addEmptyRow(matchedTable, 7, 'No matched records found.');
+          }
+
+          if (result.onlyInFirst.length) {
+            result.onlyInFirst.forEach((record) => addRecordRow(onlyInFirstTable, record));
+          } else {
+            addEmptyRow(onlyInFirstTable, 3, 'No records only in file 1.');
+          }
+
+          if (result.onlyInSecond.length) {
+            result.onlyInSecond.forEach((record) => addRecordRow(onlyInSecondTable, record));
+          } else {
+            addEmptyRow(onlyInSecondTable, 3, 'No records only in file 2.');
+          }
+
+          statusEl.textContent = 'Upload complete. Results shown below.';
+          dashboard.style.display = 'grid';
+        } catch (error) {
+          statusEl.textContent = error.message;
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>
+        } catch (error) {
+          statusEl.textContent = error.message;
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>
