@@ -8,6 +8,7 @@ const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(express.static('public'));
+app.use(express.json());
 
 function normalizeText(text) {
   return String(text || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -28,6 +29,14 @@ function normalizeName(text) {
 
 function normalizeMobile(text) {
   return String(text || '').replace(/\D+/g, '');
+}
+
+function safeGetCell(row, col) {
+  try {
+    return row.getCell(col);
+  } catch (error) {
+    return { value: '' };
+  }
 }
 
 function getCellText(value) {
@@ -81,13 +90,79 @@ function parseExcelRows(worksheet) {
   worksheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return;
 
-    const applicationNumber = normalizeText(getCellText(row.getCell(columns.applicationNumber).value));
-    const name = getCellText(row.getCell(columns.name).value).trim();
-    const mobileNumber = normalizeMobile(getCellText(row.getCell(columns.mobileNumber).value));
+    const applicationNumber = normalizeText(getCellText(safeGetCell(row, columns.applicationNumber).value));
+    const name = getCellText(safeGetCell(row, columns.name).value).trim();
+    const mobileNumber = normalizeMobile(getCellText(safeGetCell(row, columns.mobileNumber).value));
 
     if (!applicationNumber && !name && !mobileNumber) return;
 
     rows.push({ applicationNumber, name, mobileNumber });
+  });
+
+  return rows;
+}
+
+function detectSalaryColumns(headerRow) {
+  const mapping = {};
+  headerRow.eachCell((cell, col) => {
+    const value = getCellText(cell.value).toLowerCase();
+    if (/name|faculty|teacher|staff|employee/.test(value) && !mapping.name) {
+      mapping.name = col;
+    }
+    if (/(lecture|class|period|session|hour|hours|unit|units|qty|quantity|count|no\.?\s*of|number of)/.test(value) && !mapping.units) {
+      mapping.units = col;
+    }
+    if (/(rate|per\s*lecture|per\s*hour|amount|salary|pay)/.test(value) && !mapping.rate) {
+      mapping.rate = col;
+    }
+  });
+  return mapping;
+}
+
+function parseNumeric(value) {
+  const parsed = parseFloat(String(getCellText(value)).replace(/[^\d.-]/g, ''));
+  return isFinite(parsed) ? parsed : 0;
+}
+
+function parseSalaryAttendance(worksheet) {
+  const headerRow = worksheet.getRow(1);
+  const columns = detectSalaryColumns(headerRow);
+
+  if (!columns.name) columns.name = 1;
+  if (!columns.units) columns.units = 2;
+
+  const rows = [];
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+
+    const name = getCellText(safeGetCell(row, columns.name).value).trim();
+    const units = parseNumeric(safeGetCell(row, columns.units).value);
+
+    if (!name && !units) return;
+
+    rows.push({ name, units });
+  });
+
+  return rows;
+}
+
+function parseSalaryRates(worksheet) {
+  const headerRow = worksheet.getRow(1);
+  const columns = detectSalaryColumns(headerRow);
+
+  if (!columns.name) columns.name = 1;
+  if (!columns.rate) columns.rate = 2;
+
+  const rows = [];
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+
+    const name = getCellText(safeGetCell(row, columns.name).value).trim();
+    const rate = parseNumeric(safeGetCell(row, columns.rate).value);
+
+    if (!name) return;
+
+    rows.push({ name, rate });
   });
 
   return rows;
@@ -116,6 +191,77 @@ function findFirstUnmatched(list, matchedSet) {
     }
   }
   return null;
+}
+
+function getMonthDates(monthValue) {
+  if (!monthValue) return [];
+  const [year, month] = monthValue.split('-').map(Number);
+  if (!year || !month) return [];
+  const daysInMonth = new Date(year, month, 0).getDate();
+  return Array.from({ length: daysInMonth }, (_, index) => {
+    const date = new Date(year, month - 1, index + 1);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  });
+}
+
+function getWeekdayName(dateValue) {
+  const date = new Date(`${dateValue}T00:00:00`);
+  return date.toLocaleDateString('en-US', { weekday: 'short' });
+}
+
+function normalizeWeekdays(weeklyDays) {
+  return String(weeklyDays || '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+    .map((value) => value.replace(/\.$/, '').slice(0, 3));
+}
+
+function buildFacultyAttendance(month, dailyRate, facultyRows) {
+  const monthDates = getMonthDates(month);
+  const summaries = [];
+  const dateWiseReport = [];
+
+  facultyRows.forEach((faculty) => {
+    const weeklyDays = normalizeWeekdays(faculty.weeklyDays);
+    const entries = monthDates.map((dateValue) => {
+      const weekday = getWeekdayName(dateValue);
+      const isWorkingDay = weeklyDays.length === 0 || weeklyDays.includes(weekday.toLowerCase().slice(0, 3));
+      const status = faculty.attendance?.[dateValue] || (isWorkingDay ? 'present' : 'absent');
+      return { date: dateValue, weekday, workingDay: isWorkingDay, status };
+    });
+
+    const presentCount = entries.filter((entry) => entry.status === 'present').length;
+    const absentCount = entries.filter((entry) => entry.status === 'absent').length;
+    const workingDayCount = entries.filter((entry) => entry.workingDay).length;
+    const monthlyAmount = Math.round(presentCount * Number(dailyRate || 0) * 100) / 100;
+
+    summaries.push({
+      employeeCode: faculty.employeeCode || '',
+      name: faculty.name || '',
+      weeklyDays: faculty.weeklyDays || '',
+      presentCount,
+      absentCount,
+      workingDayCount,
+      monthlyAmount,
+    });
+
+    entries.forEach((entry) => {
+      dateWiseReport.push({
+        employeeCode: faculty.employeeCode || '',
+        name: faculty.name || '',
+        date: entry.date,
+        weekday: entry.weekday,
+        workingDay: entry.workingDay,
+        status: entry.status,
+      });
+    });
+  });
+
+  return { month, dailyRate: Number(dailyRate || 0), summaries, dateWiseReport };
 }
 
 app.post('/upload', upload.fields([
@@ -214,6 +360,117 @@ app.post('/upload', upload.fields([
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to process the Excel files. Please check the uploaded files and try again.' });
+  }
+});
+
+app.post('/salary', upload.fields([
+  { name: 'attendanceFile', maxCount: 1 },
+  { name: 'rateFile', maxCount: 1 }
+]), async (req, res) => {
+  const attendanceFile = req.files?.attendanceFile?.[0];
+  const rateFile = req.files?.rateFile?.[0];
+
+  if (!attendanceFile || !rateFile) {
+    return res.status(400).json({ error: 'Both the attendance log and the rate sheet are required.' });
+  }
+
+  try {
+    const attendanceWorkbook = new ExcelJS.Workbook();
+    await attendanceWorkbook.xlsx.load(attendanceFile.buffer);
+    const attendanceSheet = attendanceWorkbook.worksheets[0];
+    if (!attendanceSheet) {
+      return res.status(400).json({ error: 'Attendance file contains no worksheets.' });
+    }
+
+    const rateWorkbook = new ExcelJS.Workbook();
+    await rateWorkbook.xlsx.load(rateFile.buffer);
+    const rateSheet = rateWorkbook.worksheets[0];
+    if (!rateSheet) {
+      return res.status(400).json({ error: 'Rate file contains no worksheets.' });
+    }
+
+    const attendance = parseSalaryAttendance(attendanceSheet);
+    const rates = parseSalaryRates(rateSheet);
+
+    if (attendance.length === 0 || rates.length === 0) {
+      return res.status(400).json({ error: 'One or both files had no valid rows.' });
+    }
+
+    const facultyMap = new Map();
+    attendance.forEach((record) => {
+      const key = normalizeName(record.name);
+      if (!key) return;
+      let entry = facultyMap.get(key);
+      if (!entry) {
+        entry = { name: record.name, units: 0, rate: 0 };
+        facultyMap.set(key, entry);
+      }
+      entry.name = record.name || entry.name;
+      entry.units += record.units;
+    });
+
+    rates.forEach((record) => {
+      const key = normalizeName(record.name);
+      if (!key) return;
+      let entry = facultyMap.get(key);
+      if (!entry) {
+        entry = { name: record.name, units: 0, rate: 0 };
+        facultyMap.set(key, entry);
+      }
+      entry.name = record.name || entry.name;
+      if (record.rate > 0) entry.rate = record.rate;
+    });
+
+    const faculty = Array.from(facultyMap.values()).map((f) => ({
+      name: f.name,
+      units: f.units,
+      rate: f.rate,
+      salary: Math.round(f.units * f.rate * 100) / 100,
+    }));
+
+    const totalUnits = faculty.reduce((sum, f) => sum + f.units, 0);
+    const totalSalary = Math.round(faculty.reduce((sum, f) => sum + f.salary, 0) * 100) / 100;
+
+    res.json({
+      faculty,
+      totalFaculty: faculty.length,
+      totalUnits,
+      totalSalary,
+      branchName: getBranchName(),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to process the files. Please check the uploaded files and try again.' });
+  }
+});
+
+app.post('/faculty-attendance', (req, res) => {
+  try {
+    const { month, dailyRate, faculty } = req.body || {};
+
+    if (!month) {
+      return res.status(400).json({ error: 'Please select a month.' });
+    }
+
+    if (!Array.isArray(faculty) || faculty.length === 0) {
+      return res.status(400).json({ error: 'Please add at least one faculty entry.' });
+    }
+
+    const report = buildFacultyAttendance(month, dailyRate, faculty);
+    const totalPresent = report.summaries.reduce((sum, row) => sum + row.presentCount, 0);
+    const totalAbsent = report.summaries.reduce((sum, row) => sum + row.absentCount, 0);
+    const totalSalary = report.summaries.reduce((sum, row) => sum + row.monthlyAmount, 0);
+
+    res.json({
+      ...report,
+      totalPresent,
+      totalAbsent,
+      totalSalary,
+      branchName: getBranchName(),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to build the faculty attendance report.' });
   }
 });
 

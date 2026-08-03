@@ -108,6 +108,51 @@
         margin-top: 18px;
         font-weight: 600;
       }
+      .faculty-row {
+        background: white;
+        border: 1px solid #dbe4f0;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .faculty-row .row-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 12px;
+      }
+      .faculty-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .date-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 10px;
+      }
+      .date-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 10px;
+        background: #f8fafc;
+      }
+      .date-card select {
+        width: 100%;
+        padding: 8px;
+        border-radius: 8px;
+        border: 1px solid #cbd5e1;
+      }
+      .inline-group {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: end;
+      }
+      .inline-group > div {
+        flex: 1;
+        min-width: 180px;
+      }
     </style>
   </head>
   <body>
@@ -124,6 +169,120 @@
 
         <button type="submit">Upload and Match</button>
       </form>
+
+      <hr style="margin: 32px 0; border: none; border-top: 1px solid #e2e8f0;" />
+
+      <h2>Salary Counting for Visiting Faculty</h2>
+      <p>Upload a lecture/attendance log (name + number of lectures/hours) and a rate sheet (name + rate per lecture/hour). The dashboard will aggregate units per faculty and compute salary = units × rate.</p>
+
+      <form id="salaryForm">
+        <label for="attendanceFile">Attendance / Lecture log</label>
+        <input id="attendanceFile" name="attendanceFile" type="file" accept=".xlsx,.xls" required />
+
+        <label for="rateFile">Rate sheet</label>
+        <input id="rateFile" name="rateFile" type="file" accept=".xlsx,.xls" required />
+
+        <button type="submit">Calculate Salaries</button>
+      </form>
+
+      <div class="status" id="salaryStatus"></div>
+
+      <div class="grid" id="salaryDashboard" style="display:none;">
+        <div class="card">
+          <h2>Salary summary</h2>
+          <div class="summary">
+            <div class="chip" id="salaryFacultyCount">Faculty: 0</div>
+            <div class="chip" id="salaryUnitCount">Total lectures/hours: 0</div>
+            <div class="chip" id="salaryTotal">Total salary: 0</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Per faculty salary</h2>
+          <table class="result-table" id="salaryTable">
+            <thead>
+              <tr>
+                <th>Faculty name</th>
+                <th>Lectures/Hours</th>
+                <th>Rate</th>
+                <th>Salary</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <hr style="margin: 32px 0; border: none; border-top: 1px solid #e2e8f0;" />
+
+      <h2>Faculty attendance, report & salary</h2>
+      <p>Add faculty employee codes and names, choose weekly working days, and mark date-wise present/absent status for a selected month. The report will show monthly summaries and salary based on present days.</p>
+
+      <form id="facultyForm">
+        <div class="inline-group">
+          <div>
+            <label for="attendanceMonth">Month</label>
+            <input id="attendanceMonth" name="attendanceMonth" type="month" required />
+          </div>
+          <div>
+            <label for="dailyRate">Rate per present day</label>
+            <input id="dailyRate" name="dailyRate" type="number" min="0" step="0.01" value="500" required />
+          </div>
+        </div>
+
+        <div id="facultyRows"></div>
+
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top: 12px;">
+          <button type="button" id="addFacultyBtn">Add faculty</button>
+          <button type="submit">Generate faculty report</button>
+        </div>
+      </form>
+
+      <div class="status" id="facultyStatus"></div>
+
+      <div class="grid" id="facultyDashboard" style="display:none;">
+        <div class="card">
+          <h2>Monthly summary</h2>
+          <div class="summary">
+            <div class="chip" id="facultyPresentCount">Present days: 0</div>
+            <div class="chip" id="facultyAbsentCount">Absent days: 0</div>
+            <div class="chip" id="facultySalaryTotal">Salary total: ₹0.00</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Faculty summary</h2>
+          <table class="result-table" id="facultySummaryTable">
+            <thead>
+              <tr>
+                <th>Employee code</th>
+                <th>Faculty name</th>
+                <th>Weekly days</th>
+                <th>Present</th>
+                <th>Absent</th>
+                <th>Monthly amount</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>Date-wise report</h2>
+          <table class="result-table" id="facultyDateTable">
+            <thead>
+              <tr>
+                <th>Employee code</th>
+                <th>Faculty name</th>
+                <th>Date</th>
+                <th>Day</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
 
       <div class="status" id="status"></div>
       <div class="chip" id="branchName">Branch: loading...</div>
@@ -198,6 +357,27 @@
       const onlyInFirstTable = document.getElementById('onlyInFirstTable').querySelector('tbody');
       const onlyInSecondTable = document.getElementById('onlyInSecondTable').querySelector('tbody');
 
+      const salaryForm = document.getElementById('salaryForm');
+      const salaryStatus = document.getElementById('salaryStatus');
+      const salaryDashboard = document.getElementById('salaryDashboard');
+      const salaryFacultyCount = document.getElementById('salaryFacultyCount');
+      const salaryUnitCount = document.getElementById('salaryUnitCount');
+      const salaryTotal = document.getElementById('salaryTotal');
+      const salaryTable = document.getElementById('salaryTable').querySelector('tbody');
+
+      const facultyForm = document.getElementById('facultyForm');
+      const facultyStatus = document.getElementById('facultyStatus');
+      const facultyDashboard = document.getElementById('facultyDashboard');
+      const facultyRows = document.getElementById('facultyRows');
+      const addFacultyBtn = document.getElementById('addFacultyBtn');
+      const attendanceMonth = document.getElementById('attendanceMonth');
+      const dailyRate = document.getElementById('dailyRate');
+      const facultyPresentCount = document.getElementById('facultyPresentCount');
+      const facultyAbsentCount = document.getElementById('facultyAbsentCount');
+      const facultySalaryTotal = document.getElementById('facultySalaryTotal');
+      const facultySummaryTable = document.getElementById('facultySummaryTable').querySelector('tbody');
+      const facultyDateTable = document.getElementById('facultyDateTable').querySelector('tbody');
+
       function addRecordRow(tableBody, record) {
         const row = document.createElement('tr');
         const applicationCell = document.createElement('td');
@@ -263,7 +443,405 @@
         }
       }
 
+      function formatMoney(value) {
+        return new Intl.NumberFormat('en-IN', {
+          style: 'currency',
+          currency: 'INR',
+          minimumFractionDigits: 2,
+        }).format(value || 0);
+      }
+
+      function addSalaryRow(record) {
+        const row = document.createElement('tr');
+        const nameCell = document.createElement('td');
+        const unitsCell = document.createElement('td');
+        const rateCell = document.createElement('td');
+        const salaryCell = document.createElement('td');
+
+        nameCell.textContent = record.name || '-';
+        unitsCell.textContent = record.units;
+        rateCell.textContent = formatMoney(record.rate);
+        salaryCell.textContent = formatMoney(record.salary);
+
+        row.appendChild(nameCell);
+        row.appendChild(unitsCell);
+        row.appendChild(rateCell);
+        row.appendChild(salaryCell);
+        salaryTable.appendChild(row);
+      }
+
+      function addEmptySalaryRow(message) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 4;
+        cell.textContent = message;
+        cell.style.textAlign = 'center';
+        cell.style.color = '#6b7280';
+        row.appendChild(cell);
+        salaryTable.appendChild(row);
+      }
+
+      function getMonthDates(monthValue) {
+        if (!monthValue) return [];
+        const [year, month] = monthValue.split('-').map(Number);
+        if (!year || !month) return [];
+        const daysInMonth = new Date(year, month, 0).getDate();
+        return Array.from({ length: daysInMonth }, (_, index) => {
+          const date = new Date(year, month - 1, index + 1);
+          const yyyy = date.getFullYear();
+          const mm = String(date.getMonth() + 1).padStart(2, '0');
+          const dd = String(date.getDate()).padStart(2, '0');
+          return `${yyyy}-${mm}-${dd}`;
+        });
+      }
+
+      function getSelectedWeekdays(row) {
+        if (Array.isArray(row.weeklyDays)) {
+          return row.weeklyDays;
+        }
+        return String(row.weeklyDays || '')
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean);
+      }
+
+      function setSelectedWeekdays(row, values) {
+        row.weeklyDays = values.join(', ');
+      }
+
+      function getWeekdayName(dateValue) {
+        const [year, month, day] = dateValue.split('-').map(Number);
+        const date = new Date(year, month - 1, day);
+        return date.toLocaleDateString('en-US', { weekday: 'short' });
+      }
+
+      function isWorkingDay(row, dateValue) {
+        const selectedWeekdays = getSelectedWeekdays(row);
+        if (!selectedWeekdays.length) return true;
+        return selectedWeekdays.includes(getWeekdayName(dateValue));
+      }
+
+      function getMonthlyAmount(row) {
+        const monthDates = getMonthDates(attendanceMonth.value);
+        const presentCount = monthDates.filter((dateValue) => {
+          if (!isWorkingDay(row, dateValue)) return false;
+          return (row.attendance?.[dateValue] || 'absent') === 'present';
+        }).length;
+        return presentCount * Number(dailyRate.value || 0);
+      }
+
+      function createFacultyRow(row, index) {
+        const container = document.createElement('div');
+        container.className = 'faculty-row';
+
+        const actions = document.createElement('div');
+        actions.className = 'row-actions';
+
+        if (row.isEditing) {
+          const saveBtn = document.createElement('button');
+          saveBtn.type = 'button';
+          saveBtn.textContent = row.isNew ? 'Save' : 'Update';
+          saveBtn.addEventListener('click', () => {
+            row.isEditing = false;
+            row.isNew = false;
+            renderFacultyRows();
+          });
+          actions.appendChild(saveBtn);
+        } else {
+          const editBtn = document.createElement('button');
+          editBtn.type = 'button';
+          editBtn.textContent = 'Edit';
+          editBtn.addEventListener('click', () => {
+            row.isEditing = true;
+            renderFacultyRows();
+          });
+          actions.appendChild(editBtn);
+        }
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.textContent = 'Delete';
+        removeBtn.style.marginLeft = '8px';
+        removeBtn.addEventListener('click', () => {
+          facultyState.splice(index, 1);
+          renderFacultyRows();
+        });
+        actions.appendChild(removeBtn);
+        container.appendChild(actions);
+
+        if (row.isEditing) {
+          const grid = document.createElement('div');
+          grid.className = 'faculty-grid';
+
+          const employeeCodeWrapper = document.createElement('div');
+          const employeeCodeLabel = document.createElement('label');
+          employeeCodeLabel.textContent = 'Employee code';
+          const employeeCodeInput = document.createElement('input');
+          employeeCodeInput.type = 'text';
+          employeeCodeInput.value = row.employeeCode || '';
+          employeeCodeInput.addEventListener('input', (event) => {
+            facultyState[index].employeeCode = event.target.value;
+          });
+          employeeCodeWrapper.appendChild(employeeCodeLabel);
+          employeeCodeWrapper.appendChild(employeeCodeInput);
+          grid.appendChild(employeeCodeWrapper);
+
+          const nameWrapper = document.createElement('div');
+          const nameLabel = document.createElement('label');
+          nameLabel.textContent = 'Faculty name';
+          const nameInput = document.createElement('input');
+          nameInput.type = 'text';
+          nameInput.value = row.name || '';
+          nameInput.addEventListener('input', (event) => {
+            facultyState[index].name = event.target.value;
+          });
+          nameWrapper.appendChild(nameLabel);
+          nameWrapper.appendChild(nameInput);
+          grid.appendChild(nameWrapper);
+
+          const weeklyDaysWrapper = document.createElement('div');
+          const weeklyDaysLabel = document.createElement('label');
+          weeklyDaysLabel.textContent = 'Weekly days';
+          const selectedWeekdays = getSelectedWeekdays(row);
+          const weekdayOptions = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+          const weekdayBox = document.createElement('div');
+          weekdayOptions.forEach((day) => {
+            const checkboxLabel = document.createElement('label');
+            checkboxLabel.style.display = 'inline-flex';
+            checkboxLabel.style.alignItems = 'center';
+            checkboxLabel.style.marginRight = '10px';
+            checkboxLabel.style.marginTop = '6px';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = day;
+            checkbox.checked = selectedWeekdays.includes(day);
+            checkbox.addEventListener('change', (event) => {
+              const nextDays = getSelectedWeekdays(facultyState[index]);
+              const updatedDays = event.target.checked
+                ? [...new Set([...nextDays, day])]
+                : nextDays.filter((item) => item !== day);
+              setSelectedWeekdays(facultyState[index], updatedDays);
+              renderFacultyRows();
+            });
+            checkboxLabel.appendChild(checkbox);
+            checkboxLabel.appendChild(document.createTextNode(` ${day}`));
+            weekdayBox.appendChild(checkboxLabel);
+          });
+
+          weeklyDaysWrapper.appendChild(weeklyDaysLabel);
+          weeklyDaysWrapper.appendChild(weekdayBox);
+          grid.appendChild(weeklyDaysWrapper);
+
+          container.appendChild(grid);
+        } else {
+          const summary = document.createElement('div');
+          summary.innerHTML = `
+            <strong>${row.name || 'Unnamed faculty'}</strong><br />
+            Employee code: ${row.employeeCode || '-'}<br />
+            Weekly days: ${getSelectedWeekdays(row).join(', ') || 'Not selected'}<br />
+            Monthly amount: ${formatMoney(getMonthlyAmount(row))}
+          `;
+          container.appendChild(summary);
+        }
+
+        const dateGrid = document.createElement('div');
+        dateGrid.className = 'date-grid';
+        const monthDates = getMonthDates(attendanceMonth.value);
+
+        monthDates.forEach((dateValue) => {
+          const card = document.createElement('div');
+          card.className = 'date-card';
+          const heading = document.createElement('div');
+          heading.textContent = dateValue;
+          heading.style.fontWeight = '700';
+
+          const workingDay = isWorkingDay(row, dateValue);
+          if (row.isEditing && workingDay) {
+            const select = document.createElement('select');
+            select.innerHTML = `
+              <option value="present">Present</option>
+              <option value="absent">Absent</option>
+            `;
+            const currentStatus = row.attendance?.[dateValue] || 'absent';
+            select.value = currentStatus;
+            select.addEventListener('change', (event) => {
+              facultyState[index].attendance[dateValue] = event.target.value;
+              renderFacultyRows();
+            });
+            card.appendChild(heading);
+            card.appendChild(select);
+          } else {
+            const statusText = document.createElement('div');
+            statusText.textContent = workingDay ? (row.attendance?.[dateValue] || 'absent') : 'off';
+            statusText.style.textTransform = 'capitalize';
+            statusText.style.color = workingDay ? '#1f2937' : '#9ca3af';
+            card.appendChild(heading);
+            card.appendChild(statusText);
+            if (!workingDay) {
+              card.style.opacity = '0.7';
+            }
+          }
+
+          dateGrid.appendChild(card);
+        });
+
+        container.appendChild(dateGrid);
+        return container;
+      }
+
+      function renderFacultyRows() {
+        facultyRows.innerHTML = '';
+        facultyState.forEach((row, index) => {
+          facultyRows.appendChild(createFacultyRow(row, index));
+        });
+      }
+
+      function formatMoney(value) {
+        return new Intl.NumberFormat('en-IN', {
+          style: 'currency',
+          currency: 'INR',
+          minimumFractionDigits: 2,
+        }).format(value || 0);
+      }
+
+      let facultyState = [{ employeeCode: '', name: '', weeklyDays: '', attendance: {}, isEditing: true, isNew: true }];
+      renderFacultyRows();
+
+      attendanceMonth.addEventListener('change', renderFacultyRows);
+      dailyRate.addEventListener('input', renderFacultyRows);
+      dailyRate.addEventListener('change', renderFacultyRows);
+      addFacultyBtn.addEventListener('click', () => {
+        facultyState.push({ employeeCode: '', name: '', weeklyDays: '', attendance: {}, isEditing: true, isNew: true });
+        renderFacultyRows();
+      });
+
       refreshBranchName();
+
+      salaryForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        salaryStatus.textContent = 'Calculating salaries...';
+        salaryDashboard.style.display = 'none';
+        salaryTable.innerHTML = '';
+
+        const formData = new FormData(salaryForm);
+        const submitButton = salaryForm.querySelector('button[type=submit]');
+        submitButton.disabled = true;
+
+        try {
+          const response = await fetch('/salary', {
+            method: 'POST',
+            body: formData,
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            throw new Error(result.error || 'Calculation failed');
+          }
+
+          salaryFacultyCount.textContent = `Faculty: ${result.totalFaculty}`;
+          salaryUnitCount.textContent = `Total lectures/hours: ${result.totalUnits}`;
+          salaryTotal.textContent = `Total salary: ${formatMoney(result.totalSalary)}`;
+
+          if (result.faculty.length) {
+            result.faculty.forEach((record) => addSalaryRow(record));
+          } else {
+            addEmptySalaryRow('No faculty records found.');
+          }
+
+          salaryStatus.textContent = 'Calculation complete. Results shown below.';
+          salaryDashboard.style.display = 'grid';
+        } catch (error) {
+          salaryStatus.textContent = error.message;
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+
+      facultyForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        facultyStatus.textContent = 'Generating faculty attendance report...';
+        facultyDashboard.style.display = 'none';
+        facultySummaryTable.innerHTML = '';
+        facultyDateTable.innerHTML = '';
+
+        const submitButton = facultyForm.querySelector('button[type=submit]');
+        submitButton.disabled = true;
+
+        try {
+          const payload = {
+            month: attendanceMonth.value,
+            dailyRate: dailyRate.value,
+            faculty: facultyState.map((row) => ({
+              employeeCode: row.employeeCode,
+              name: row.name,
+              weeklyDays: row.weeklyDays,
+              attendance: row.attendance,
+            })),
+          };
+
+          const response = await fetch('/faculty-attendance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            throw new Error(result.error || 'Faculty report failed');
+          }
+
+          facultyPresentCount.textContent = `Present days: ${result.totalPresent}`;
+          facultyAbsentCount.textContent = `Absent days: ${result.totalAbsent}`;
+          facultySalaryTotal.textContent = `Salary total: ${formatMoney(result.totalSalary)}`;
+
+          if (result.summaries.length) {
+            result.summaries.forEach((row) => {
+              const tr = document.createElement('tr');
+              tr.innerHTML = `
+                <td>${row.employeeCode || '-'}</td>
+                <td>${row.name || '-'}</td>
+                <td>${row.weeklyDays || '-'}</td>
+                <td>${row.presentCount}</td>
+                <td>${row.absentCount}</td>
+                <td>${formatMoney(row.monthlyAmount)}</td>
+              `;
+              facultySummaryTable.appendChild(tr);
+            });
+          } else {
+            const tr = document.createElement('tr');
+            tr.innerHTML = '<td colspan="6" style="text-align:center;color:#6b7280;">No faculty data available.</td>';
+            facultySummaryTable.appendChild(tr);
+          }
+
+          if (result.dateWiseReport.length) {
+            result.dateWiseReport.forEach((row) => {
+              const tr = document.createElement('tr');
+              tr.innerHTML = `
+                <td>${row.employeeCode || '-'}</td>
+                <td>${row.name || '-'}</td>
+                <td>${row.date}</td>
+                <td>${row.weekday}</td>
+                <td>${row.status}</td>
+              `;
+              facultyDateTable.appendChild(tr);
+            });
+          } else {
+            const tr = document.createElement('tr');
+            tr.innerHTML = '<td colspan="5" style="text-align:center;color:#6b7280;">No date-wise data available.</td>';
+            facultyDateTable.appendChild(tr);
+          }
+
+          facultyStatus.textContent = 'Faculty report generated successfully.';
+          facultyDashboard.style.display = 'grid';
+        } catch (error) {
+          facultyStatus.textContent = error.message;
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
 
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -314,15 +892,6 @@
 
           statusEl.textContent = 'Upload complete. Results shown below.';
           dashboard.style.display = 'grid';
-        } catch (error) {
-          statusEl.textContent = error.message;
-        } finally {
-          submitButton.disabled = false;
-        }
-      });
-    </script>
-  </body>
-</html>
         } catch (error) {
           statusEl.textContent = error.message;
         } finally {
