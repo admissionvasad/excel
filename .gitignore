@@ -1,0 +1,26 @@
+node_modules/
+.env
+.env.local
+.env.*.local
+.svelte-kit/
+build/
+dist/
+coverage/
+.vite/
+.svelte-kit/ambient.d.ts
+
+# Local fallback data store
+data/erp-data.json
+data/*.local.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Supabase CLI
+supabase/.temp/
+supabase/.branches/

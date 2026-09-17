@@ -1,494 +1,192 @@
+require('dotenv').config();
 const express = require('express');
-const { execSync } = require('child_process');
-const multer = require('multer');
-const ExcelJS = require('exceljs');
-const pdfParse = require('pdf-parse');
+const fs = require('fs');
+const path = require('path');
+const supabaseStore = require('./lib/supabase-store');
 
 const app = express();
-const upload = multer({ storage: multer.memoryStorage() });
+const port = process.env.PORT || 3000;
 
-app.use(express.static('public'));
+const colleges = [
+  { id: 'COL001', name: 'Northbridge Institute', shortName: 'NBI', city: 'Ahmedabad', students: 2840, employees: 186, attendance: 92.4, fees: 84.2, color: '#d96c45' },
+  { id: 'COL002', name: 'Riverstone College', shortName: 'RSC', city: 'Vadodara', students: 2160, employees: 154, attendance: 89.8, fees: 79.6, color: '#287d72' },
+  { id: 'COL003', name: 'Aravalli School of Technology', shortName: 'AST', city: 'Gandhinagar', students: 1980, employees: 142, attendance: 91.1, fees: 87.4, color: '#4e68a1' },
+  { id: 'COL004', name: 'Westfield Arts & Commerce', shortName: 'WAC', city: 'Surat', students: 1740, employees: 121, attendance: 88.6, fees: 75.9, color: '#b8893e' },
+  { id: 'COL005', name: 'Cedar Grove University', shortName: 'CGU', city: 'Rajkot', students: 1320, employees: 98, attendance: 93.2, fees: 81.8, color: '#795b8f' },
+];
+
+const collegeData = new Map(colleges.map((college) => [college.id, {
+  departments: [
+    { id: `${college.id}-DEP001`, name: 'Computer Engineering', code: 'CE' },
+    { id: `${college.id}-DEP002`, name: 'Management', code: 'MG' },
+  ],
+  courses: [],
+  students: [],
+}]));
+
+const dataDirectory = path.join(__dirname, 'data');
+const dataFile = path.join(dataDirectory, 'erp-data.json');
+
+function saveStore() {
+  fs.mkdirSync(dataDirectory, { recursive: true });
+  fs.writeFileSync(dataFile, JSON.stringify({ colleges, collegeData: Object.fromEntries(collegeData) }, null, 2));
+}
+
+function loadStore() {
+  if (!fs.existsSync(dataFile)) {
+    saveStore();
+    return;
+  }
+
+  try {
+    const saved = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+    colleges.splice(0, colleges.length, ...(saved.colleges || []));
+    collegeData.clear();
+    Object.entries(saved.collegeData || {}).forEach(([id, data]) => collegeData.set(id, data));
+  } catch (error) {
+    console.error('Could not load ERP data store; using seed data.', error.message);
+    saveStore();
+  }
+}
+
+loadStore();
+
+const modules = [
+  { id: 'overview', label: 'Overview', icon: '◈' },
+  { id: 'students', label: 'Students', icon: '◎', count: 10040 },
+  { id: 'admissions', label: 'Admissions', icon: '↗', count: 128 },
+  { id: 'academics', label: 'Academics', icon: '▤' },
+  { id: 'attendance', label: 'Attendance', icon: '◷' },
+  { id: 'examination', label: 'Examination', icon: '□' },
+  { id: 'fees', label: 'Fees & Accounts', icon: '₹', count: 246 },
+  { id: 'employees', label: 'Employees & HR', icon: '♙' },
+  { id: 'library', label: 'Library', icon: '▥' },
+  { id: 'inventory', label: 'Inventory', icon: '⌂' },
+  { id: 'reports', label: 'Reports', icon: '▥' },
+  { id: 'college-setup', label: 'College Setup', icon: '+' },
+];
+
 app.use(express.json());
-
-function normalizeText(text) {
-  return String(text || '').trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function normalizeAlphaNumeric(text) {
-  return String(text || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
-}
-
-function normalizeName(text) {
-  return String(text || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
-function normalizeMobile(text) {
-  return String(text || '').replace(/\D+/g, '');
-}
-
-function safeGetCell(row, col) {
+app.use(express.static('public'));
+app.get('/api/bootstrap', async (_req, res) => {
   try {
-    return row.getCell(col);
+    const visibleColleges = supabaseStore.enabled ? await supabaseStore.listColleges() : colleges;
+    res.json({ colleges: visibleColleges, modules, academicYear: '2026-27', currency: 'INR', storage: supabaseStore.enabled ? 'supabase' : 'local' });
   } catch (error) {
-    return { value: '' };
-  }
-}
-
-function getCellText(value) {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map(getCellText).join(' ');
-  }
-  if (value.richText) {
-    return value.richText.map((part) => String(part.text || '')).join(' ');
-  }
-  if (value.text) {
-    return String(value.text);
-  }
-  if (value.hyperlink) {
-    return String(value.text || value.hyperlink);
-  }
-  return String(value);
-}
-
-function detectColumns(headerRow) {
-  const mapping = {};
-  headerRow.eachCell((cell, col) => {
-    const value = getCellText(cell.value).toLowerCase();
-    if (/application\s*number|app\s*no|app\s*id|acpc\s*application|acpc\s*no|application\s*id/.test(value)) {
-      mapping.applicationNumber = col;
-    }
-    if (/name/.test(value) && !mapping.name) {
-      mapping.name = col;
-    }
-    if (/mobile|phone|contact/.test(value) && !mapping.mobileNumber) {
-      mapping.mobileNumber = col;
-    }
-  });
-  return mapping;
-}
-
-function parseExcelRows(worksheet) {
-  const headerRow = worksheet.getRow(1);
-  const columns = detectColumns(headerRow);
-
-  if (!columns.applicationNumber && !columns.name && !columns.mobileNumber) {
-    columns.applicationNumber = 1;
-    columns.name = 2;
-    columns.mobileNumber = 3;
-  }
-
-  const rows = [];
-  worksheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return;
-
-    const applicationNumber = normalizeText(getCellText(safeGetCell(row, columns.applicationNumber).value));
-    const name = getCellText(safeGetCell(row, columns.name).value).trim();
-    const mobileNumber = normalizeMobile(getCellText(safeGetCell(row, columns.mobileNumber).value));
-
-    if (!applicationNumber && !name && !mobileNumber) return;
-
-    rows.push({ applicationNumber, name, mobileNumber });
-  });
-
-  return rows;
-}
-
-function detectSalaryColumns(headerRow) {
-  const mapping = {};
-  headerRow.eachCell((cell, col) => {
-    const value = getCellText(cell.value).toLowerCase();
-    if (/name|faculty|teacher|staff|employee/.test(value) && !mapping.name) {
-      mapping.name = col;
-    }
-    if (/(lecture|class|period|session|hour|hours|unit|units|qty|quantity|count|no\.?\s*of|number of)/.test(value) && !mapping.units) {
-      mapping.units = col;
-    }
-    if (/(rate|per\s*lecture|per\s*hour|amount|salary|pay)/.test(value) && !mapping.rate) {
-      mapping.rate = col;
-    }
-  });
-  return mapping;
-}
-
-function parseNumeric(value) {
-  const parsed = parseFloat(String(getCellText(value)).replace(/[^\d.-]/g, ''));
-  return isFinite(parsed) ? parsed : 0;
-}
-
-function parseSalaryAttendance(worksheet) {
-  const headerRow = worksheet.getRow(1);
-  const columns = detectSalaryColumns(headerRow);
-
-  if (!columns.name) columns.name = 1;
-  if (!columns.units) columns.units = 2;
-
-  const rows = [];
-  worksheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return;
-
-    const name = getCellText(safeGetCell(row, columns.name).value).trim();
-    const units = parseNumeric(safeGetCell(row, columns.units).value);
-
-    if (!name && !units) return;
-
-    rows.push({ name, units });
-  });
-
-  return rows;
-}
-
-function parseSalaryRates(worksheet) {
-  const headerRow = worksheet.getRow(1);
-  const columns = detectSalaryColumns(headerRow);
-
-  if (!columns.name) columns.name = 1;
-  if (!columns.rate) columns.rate = 2;
-
-  const rows = [];
-  worksheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return;
-
-    const name = getCellText(safeGetCell(row, columns.name).value).trim();
-    const rate = parseNumeric(safeGetCell(row, columns.rate).value);
-
-    if (!name) return;
-
-    rows.push({ name, rate });
-  });
-
-  return rows;
-}
-
-function getRecordSignatures(record) {
-  const appKey = normalizeAlphaNumeric(record.applicationNumber || '');
-  const nameKey = normalizeName(record.name || '');
-  const mobileKey = normalizeMobile(record.mobileNumber || '');
-  const nameMobileKey = nameKey && mobileKey ? `${nameKey}|${mobileKey}` : '';
-  return { appKey, nameKey, mobileKey, nameMobileKey };
-}
-
-function addToMap(map, key, record) {
-  if (!key) return;
-  const list = map.get(key) || [];
-  list.push(record);
-  map.set(key, list);
-}
-
-function findFirstUnmatched(list, matchedSet) {
-  if (!list) return null;
-  for (const record of list) {
-    if (!matchedSet.has(record)) {
-      return record;
-    }
-  }
-  return null;
-}
-
-function getMonthDates(monthValue) {
-  if (!monthValue) return [];
-  const [year, month] = monthValue.split('-').map(Number);
-  if (!year || !month) return [];
-  const daysInMonth = new Date(year, month, 0).getDate();
-  return Array.from({ length: daysInMonth }, (_, index) => {
-    const date = new Date(year, month - 1, index + 1);
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  });
-}
-
-function getWeekdayName(dateValue) {
-  const date = new Date(`${dateValue}T00:00:00`);
-  return date.toLocaleDateString('en-US', { weekday: 'short' });
-}
-
-function normalizeWeekdays(weeklyDays) {
-  return String(weeklyDays || '')
-    .split(',')
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean)
-    .map((value) => value.replace(/\.$/, '').slice(0, 3));
-}
-
-function buildFacultyAttendance(month, dailyRate, facultyRows) {
-  const monthDates = getMonthDates(month);
-  const summaries = [];
-  const dateWiseReport = [];
-
-  facultyRows.forEach((faculty) => {
-    const weeklyDays = normalizeWeekdays(faculty.weeklyDays);
-    const entries = monthDates.map((dateValue) => {
-      const weekday = getWeekdayName(dateValue);
-      const isWorkingDay = weeklyDays.length === 0 || weeklyDays.includes(weekday.toLowerCase().slice(0, 3));
-      const status = faculty.attendance?.[dateValue] || (isWorkingDay ? 'present' : 'absent');
-      return { date: dateValue, weekday, workingDay: isWorkingDay, status };
-    });
-
-    const presentCount = entries.filter((entry) => entry.status === 'present').length;
-    const absentCount = entries.filter((entry) => entry.status === 'absent').length;
-    const workingDayCount = entries.filter((entry) => entry.workingDay).length;
-    const monthlyAmount = Math.round(presentCount * Number(dailyRate || 0) * 100) / 100;
-
-    summaries.push({
-      employeeCode: faculty.employeeCode || '',
-      name: faculty.name || '',
-      weeklyDays: faculty.weeklyDays || '',
-      presentCount,
-      absentCount,
-      workingDayCount,
-      monthlyAmount,
-    });
-
-    entries.forEach((entry) => {
-      dateWiseReport.push({
-        employeeCode: faculty.employeeCode || '',
-        name: faculty.name || '',
-        date: entry.date,
-        weekday: entry.weekday,
-        workingDay: entry.workingDay,
-        status: entry.status,
-      });
-    });
-  });
-
-  return { month, dailyRate: Number(dailyRate || 0), summaries, dateWiseReport };
-}
-
-app.post('/upload', upload.fields([
-  { name: 'excelFile1', maxCount: 1 },
-  { name: 'excelFile2', maxCount: 1 }
-]), async (req, res) => {
-  const excelFile1 = req.files?.excelFile1?.[0];
-  const excelFile2 = req.files?.excelFile2?.[0];
-
-  if (!excelFile1 || !excelFile2) {
-    return res.status(400).json({ error: 'Both Excel files are required.' });
-  }
-
-  try {
-    const workbook1 = new ExcelJS.Workbook();
-    await workbook1.xlsx.load(excelFile1.buffer);
-    const worksheet1 = workbook1.worksheets[0];
-    if (!worksheet1) {
-      return res.status(400).json({ error: 'First Excel file contains no worksheets.' });
-    }
-
-    const workbook2 = new ExcelJS.Workbook();
-    await workbook2.xlsx.load(excelFile2.buffer);
-    const worksheet2 = workbook2.worksheets[0];
-    if (!worksheet2) {
-      return res.status(400).json({ error: 'Second Excel file contains no worksheets.' });
-    }
-
-    const records1 = parseExcelRows(worksheet1);
-    const records2 = parseExcelRows(worksheet2);
-
-    if (records1.length === 0 || records2.length === 0) {
-      return res.status(400).json({ error: 'One or both Excel files had no valid rows.' });
-    }
-
-    const file2AppMap = new Map();
-    const file2NameMobileMap = new Map();
-    const file2NameMap = new Map();
-    const file2MobileMap = new Map();
-
-    records2.forEach((record) => {
-      const sig = getRecordSignatures(record);
-      addToMap(file2AppMap, sig.appKey, record);
-      addToMap(file2NameMobileMap, sig.nameMobileKey, record);
-      addToMap(file2NameMap, sig.nameKey, record);
-      addToMap(file2MobileMap, sig.mobileKey, record);
-    });
-
-    const matched = [];
-    const onlyInFirst = [];
-    const matchedSecond = new Set();
-
-    records1.forEach((record) => {
-      const sig = getRecordSignatures(record);
-      let match = null;
-      let method = null;
-
-      if (sig.appKey) {
-        match = findFirstUnmatched(file2AppMap.get(sig.appKey), matchedSecond);
-        method = 'applicationNumber';
-      }
-
-      if (!match && sig.nameMobileKey) {
-        match = findFirstUnmatched(file2NameMobileMap.get(sig.nameMobileKey), matchedSecond);
-        method = 'nameMobile';
-      }
-
-      if (!match && sig.nameKey) {
-        match = findFirstUnmatched(file2NameMap.get(sig.nameKey), matchedSecond);
-        method = 'name';
-      }
-
-      if (!match && sig.mobileKey) {
-        match = findFirstUnmatched(file2MobileMap.get(sig.mobileKey), matchedSecond);
-        method = 'mobile';
-      }
-
-      if (match) {
-        matched.push({ first: record, second: match, method });
-        matchedSecond.add(match);
-      } else {
-        onlyInFirst.push(record);
-      }
-    });
-
-    const onlyInSecond = records2.filter((record) => !matchedSecond.has(record));
-
-    res.json({
-      matched,
-      onlyInFirst,
-      onlyInSecond,
-      totalFirst: records1.length,
-      totalSecond: records2.length,
-      branchName: getBranchName(),
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to process the Excel files. Please check the uploaded files and try again.' });
+    res.status(502).json({ error: 'Supabase could not load college data.', detail: error.message });
   }
 });
-
-app.post('/salary', upload.fields([
-  { name: 'attendanceFile', maxCount: 1 },
-  { name: 'rateFile', maxCount: 1 }
-]), async (req, res) => {
-  const attendanceFile = req.files?.attendanceFile?.[0];
-  const rateFile = req.files?.rateFile?.[0];
-
-  if (!attendanceFile || !rateFile) {
-    return res.status(400).json({ error: 'Both the attendance log and the rate sheet are required.' });
-  }
-
+app.post('/api/colleges', async (req, res) => {
+  const { name, shortName, city } = req.body || {};
+  if (!name || !shortName || !city) return res.status(400).json({ error: 'College name, short name, and city are required.' });
+  const id = `COL${String(colleges.length + 1).padStart(3, '0')}`;
+  const college = { id, name: name.trim(), shortName: shortName.trim().toUpperCase(), city: city.trim(), students: 0, employees: 0, attendance: 0, fees: 0, color: '#4e68a1' };
   try {
-    const attendanceWorkbook = new ExcelJS.Workbook();
-    await attendanceWorkbook.xlsx.load(attendanceFile.buffer);
-    const attendanceSheet = attendanceWorkbook.worksheets[0];
-    if (!attendanceSheet) {
-      return res.status(400).json({ error: 'Attendance file contains no worksheets.' });
-    }
-
-    const rateWorkbook = new ExcelJS.Workbook();
-    await rateWorkbook.xlsx.load(rateFile.buffer);
-    const rateSheet = rateWorkbook.worksheets[0];
-    if (!rateSheet) {
-      return res.status(400).json({ error: 'Rate file contains no worksheets.' });
-    }
-
-    const attendance = parseSalaryAttendance(attendanceSheet);
-    const rates = parseSalaryRates(rateSheet);
-
-    if (attendance.length === 0 || rates.length === 0) {
-      return res.status(400).json({ error: 'One or both files had no valid rows.' });
-    }
-
-    const facultyMap = new Map();
-    attendance.forEach((record) => {
-      const key = normalizeName(record.name);
-      if (!key) return;
-      let entry = facultyMap.get(key);
-      if (!entry) {
-        entry = { name: record.name, units: 0, rate: 0 };
-        facultyMap.set(key, entry);
-      }
-      entry.name = record.name || entry.name;
-      entry.units += record.units;
-    });
-
-    rates.forEach((record) => {
-      const key = normalizeName(record.name);
-      if (!key) return;
-      let entry = facultyMap.get(key);
-      if (!entry) {
-        entry = { name: record.name, units: 0, rate: 0 };
-        facultyMap.set(key, entry);
-      }
-      entry.name = record.name || entry.name;
-      if (record.rate > 0) entry.rate = record.rate;
-    });
-
-    const faculty = Array.from(facultyMap.values()).map((f) => ({
-      name: f.name,
-      units: f.units,
-      rate: f.rate,
-      salary: Math.round(f.units * f.rate * 100) / 100,
-    }));
-
-    const totalUnits = faculty.reduce((sum, f) => sum + f.units, 0);
-    const totalSalary = Math.round(faculty.reduce((sum, f) => sum + f.salary, 0) * 100) / 100;
-
-    res.json({
-      faculty,
-      totalFaculty: faculty.length,
-      totalUnits,
-      totalSalary,
-      branchName: getBranchName(),
-    });
+    if (supabaseStore.enabled) await supabaseStore.insertCollege(college);
+    colleges.push(college);
+    collegeData.set(id, { departments: [], courses: [], students: [] });
+    saveStore();
+    res.status(201).json(college);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to process the files. Please check the uploaded files and try again.' });
+    res.status(502).json({ error: 'Supabase could not save the college.', detail: error.message });
   }
 });
-
-app.post('/faculty-attendance', (req, res) => {
+app.post('/api/college/:id/departments', async (req, res) => {
+  const college = colleges.find((item) => item.id === req.params.id);
+  const data = collegeData.get(req.params.id);
+  const { name, code } = req.body || {};
+  if (!college || !data) return res.status(404).json({ error: 'College not found' });
+  if (!name || !code) return res.status(400).json({ error: 'Department name and code are required.' });
+  const department = { id: `${college.id}-DEP${String(data.departments.length + 1).padStart(3, '0')}`, name: name.trim(), code: code.trim().toUpperCase() };
   try {
-    const { month, dailyRate, faculty } = req.body || {};
-
-    if (!month) {
-      return res.status(400).json({ error: 'Please select a month.' });
-    }
-
-    if (!Array.isArray(faculty) || faculty.length === 0) {
-      return res.status(400).json({ error: 'Please add at least one faculty entry.' });
-    }
-
-    const report = buildFacultyAttendance(month, dailyRate, faculty);
-    const totalPresent = report.summaries.reduce((sum, row) => sum + row.presentCount, 0);
-    const totalAbsent = report.summaries.reduce((sum, row) => sum + row.absentCount, 0);
-    const totalSalary = report.summaries.reduce((sum, row) => sum + row.monthlyAmount, 0);
-
-    res.json({
-      ...report,
-      totalPresent,
-      totalAbsent,
-      totalSalary,
-      branchName: getBranchName(),
-    });
+    if (supabaseStore.enabled) await supabaseStore.insertDepartment(department, college.id);
+    data.departments.push(department);
+    saveStore();
+    res.status(201).json(department);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to build the faculty attendance report.' });
+    res.status(502).json({ error: 'Supabase could not save the department.', detail: error.message });
   }
 });
-
-app.get('/branch', (req, res) => {
-  res.json({ branchName: getBranchName() });
-});
-
-function getBranchName() {
+app.post('/api/college/:id/courses', async (req, res) => {
+  const college = colleges.find((item) => item.id === req.params.id);
+  const data = collegeData.get(req.params.id);
+  const { departmentId, name, code, intake, acpcCode } = req.body || {};
+  if (!college || !data) return res.status(404).json({ error: 'College not found' });
+  if (!departmentId || !name || !code || !intake || !acpcCode) return res.status(400).json({ error: 'Department, course name, course code, intake, and ACPC code are required.' });
+  if (!data.departments.some((department) => department.id === departmentId)) return res.status(400).json({ error: 'Department does not belong to this college.' });
+  const course = { id: `${college.id}-CRS${String(data.courses.length + 1).padStart(3, '0')}`, collegeId: college.id, departmentId, name: name.trim(), code: code.trim().toUpperCase(), intake: Number(intake), acpcCode: acpcCode.trim().toUpperCase() };
   try {
-    const output = execSync('git rev-parse --abbrev-ref HEAD', { cwd: __dirname, encoding: 'utf8' });
-    return output.trim();
+    if (supabaseStore.enabled) await supabaseStore.insertCourse(course);
+    data.courses.push(course);
+    saveStore();
+    res.status(201).json(course);
   } catch (error) {
-    return 'unknown';
+    res.status(502).json({ error: 'Supabase could not save the course.', detail: error.message });
   }
-}
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server listening on http://localhost:${PORT}`);
-  console.log(`Branch: ${getBranchName()}`);
 });
+app.get('/api/college/:id/students', async (req, res) => {
+  if (supabaseStore.enabled) {
+    try {
+      const data = await supabaseStore.getCollege(req.params.id);
+      return res.json(data.students);
+    } catch (error) {
+      return res.status(502).json({ error: 'Supabase could not load students.', detail: error.message });
+    }
+  }
+  const data = collegeData.get(req.params.id);
+  if (!data) return res.status(404).json({ error: 'College not found' });
+  res.json(data.students || []);
+});
+app.post('/api/college/:id/students', async (req, res) => {
+  const college = colleges.find((item) => item.id === req.params.id);
+  const data = collegeData.get(req.params.id);
+  const { firstName, lastName, enrollmentNumber, programme, semester, mobile, status } = req.body || {};
+  if (!college || !data) return res.status(404).json({ error: 'College not found' });
+  if (!firstName || !lastName || !enrollmentNumber || !programme || !semester) return res.status(400).json({ error: 'First name, last name, enrollment number, programme, and semester are required.' });
+  if ((data.students || []).some((student) => student.enrollmentNumber.toLowerCase() === enrollmentNumber.trim().toLowerCase())) return res.status(409).json({ error: 'Enrollment number already exists in this college.' });
+  const student = { id: `${college.id}-STU${String((data.students || []).length + 1).padStart(4, '0')}`, collegeId: college.id, firstName: firstName.trim(), lastName: lastName.trim(), enrollmentNumber: enrollmentNumber.trim().toUpperCase(), programme: programme.trim(), semester: Number(semester), mobile: (mobile || '').trim(), status: status || 'Active' };
+  try {
+    if (supabaseStore.enabled) await supabaseStore.insertStudent(student);
+    data.students = data.students || [];
+    data.students.push(student);
+    college.students += 1;
+    saveStore();
+    res.status(201).json(student);
+  } catch (error) {
+    res.status(502).json({ error: 'Supabase could not save the student.', detail: error.message });
+  }
+});
+app.get('/api/college/:id', async (req, res) => {
+  if (supabaseStore.enabled) {
+    try {
+      const remote = await supabaseStore.getCollege(req.params.id);
+      return res.json({ ...remote, activity: [] });
+    } catch (error) {
+      return res.status(502).json({ error: 'Supabase could not load college data.', detail: error.message });
+    }
+  }
+  const college = colleges.find((item) => item.id === req.params.id);
+  if (!college) return res.status(404).json({ error: 'College not found' });
+  const data = collegeData.get(college.id);
+  res.json({
+    college,
+    departments: data.departments.map((department, index) => ({ ...department, students: Math.round(college.students * [0.28, 0.2, 0.18, 0.16, 0.18][index % 5]), color: [college.color, '#287d72', '#b8893e', '#4e68a1', '#795b8f'][index % 5] })),
+    courses: data.courses,
+    students: data.students || [],
+    legacyDepartments: [
+      { name: 'Computer Engineering', students: Math.round(college.students * 0.28), color: college.color },
+      { name: 'Management', students: Math.round(college.students * 0.2), color: '#287d72' },
+      { name: 'Commerce', students: Math.round(college.students * 0.18), color: '#b8893e' },
+      { name: 'Science', students: Math.round(college.students * 0.16), color: '#4e68a1' },
+      { name: 'Arts & Humanities', students: Math.round(college.students * 0.18), color: '#795b8f' },
+    ],
+    activity: [
+      { title: 'Fee receipt generated', detail: 'Student ST-24018 · Tuition fee', time: '12 min ago' },
+      { title: 'Admission application approved', detail: 'Application AD-2026-084 · Computer Engineering', time: '28 min ago' },
+      { title: 'Leave request submitted', detail: 'Dr. Meera Shah · 18-20 Sep', time: '1 hr ago' },
+      { title: 'New notice published', detail: 'Mid-semester examination schedule', time: '2 hrs ago' },
+    ],
+  });
+});
+app.get('*', (_req, res) => res.sendFile('index.html', { root: 'public' }));
+app.listen(port, () => console.log(`College ERP running at http://localhost:${port}`));

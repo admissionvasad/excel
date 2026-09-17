@@ -1,0 +1,3 @@
+-- The core migration seeds COL001-COL005.
+-- Add development users through Supabase Auth, then create matching rows in public.profiles.
+-- Never place passwords or service-role keys in this file.
