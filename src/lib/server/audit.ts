@@ -51,7 +51,7 @@ export async function recordAudit(
 				created_at: new Date().toISOString()
 			});
 		} else if (event.locals.supabase) {
-			await event.locals.supabase.from('audit_logs').insert(row);
+			await (event.locals.supabase.from('audit_logs') as any).insert(row as Record<string, unknown>);
 		}
 	} catch (error) {
 		console.error('Failed to write audit log', error);

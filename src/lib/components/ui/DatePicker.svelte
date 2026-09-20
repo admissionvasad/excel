@@ -26,7 +26,16 @@
 	{#if label}
 		<label for={inputId}>{label}{#if required}<span class="required">*</span>{/if}</label>
 	{/if}
-	<input {id: inputId} {name} {type} bind:value={value} {required} {disabled} class="input {error ? 'invalid' : ''}" />
+	<input
+		id={inputId}
+		{name}
+		{type}
+		bind:value={value}
+		{required}
+		{disabled}
+		class="input"
+		class:invalid={Boolean(error)}
+	/>
 	{#if hint && !error}<span class="hint">{hint}</span>{/if}
 	{#if error}<span class="error">{error}</span>{/if}
 </div>

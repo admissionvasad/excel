@@ -9,7 +9,7 @@
 		disabled = false,
 		hint = '',
 		error = '',
-		autocomplete,
+		autocomplete = undefined,
 		min,
 		max,
 		step,
@@ -26,7 +26,16 @@
 		disabled?: boolean;
 		hint?: string;
 		error?: string;
-		autocomplete?: string;
+		autocomplete?:
+			| 'on'
+			| 'off'
+			| 'name'
+			| 'email'
+			| 'username'
+			| 'current-password'
+			| 'new-password'
+			| 'tel'
+			| 'url';
 		min?: number | string;
 		max?: number | string;
 		step?: number | string;
@@ -43,10 +52,10 @@
 		<label for={inputId}>{label}{#if required}<span class="required">*</span>{/if}</label>
 	{/if}
 	<input
-		{id: inputId}
+		id={inputId}
 		{name}
 		{type}
-		bind:value
+		bind:value={value}
 		{placeholder}
 		{disabled}
 		{required}
@@ -55,7 +64,8 @@
 		{max}
 		{step}
 		{maxlength}
-		class="input {error ? 'invalid' : ''}"
+		class="input"
+		class:invalid={Boolean(error)}
 	/>
 	{#if hint && !error}<span class="hint">{hint}</span>{/if}
 	{#if error}<span class="error">{error}</span>{/if}

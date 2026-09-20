@@ -3,7 +3,7 @@ import path from 'node:path';
 import { randomUUID, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { MODULES } from '$lib/config/modules';
 import { everyPermissionCode, rolePermissionCodes } from '$lib/config/permissions';
-import { ROLES, type Role } from '$lib/types';
+import { PERMISSION_ACTIONS, ROLES, type Role } from '$lib/types';
 import { LOCAL_ADMIN_EMAIL, LOCAL_ADMIN_PASSWORD } from './config';
 
 const allCodes = everyPermissionCode();
@@ -29,6 +29,7 @@ interface StoreShape {
 	collections: Record<string, Record<string, unknown>[]>;
 	users: LocalUser[];
 	sessions: Record<string, string>;
+	seededAt?: string;
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');

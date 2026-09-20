@@ -28,7 +28,17 @@
 	{#if label}
 		<label for={inputId}>{label}{#if required}<span class="required">*</span>{/if}</label>
 	{/if}
-	<textarea {id: inputId} {name} {rows} bind:value {placeholder} {disabled} {required} class="textarea {error ? 'invalid' : ''}"></textarea>
+	<textarea
+		id={inputId}
+		{name}
+		{rows}
+		bind:value={value}
+		{placeholder}
+		{disabled}
+		{required}
+		class="textarea"
+		class:invalid={Boolean(error)}
+	></textarea>
 	{#if hint && !error}<span class="hint">{hint}</span>{/if}
 	{#if error}<span class="error">{error}</span>{/if}
 </div>

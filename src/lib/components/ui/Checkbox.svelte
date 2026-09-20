@@ -19,7 +19,7 @@
 </script>
 
 <label class="checkbox" for={inputId}>
-	<input {id: inputId} {name} type="checkbox" bind:checked {disabled} {required} />
+	<input id={inputId} {name} type="checkbox" bind:checked={checked} {disabled} {required} />
 	<span>
 		{label}{#if required}<span class="required">*</span>{/if}
 		{#if description}<span class="hint" style="display:block">{description}</span>{/if}

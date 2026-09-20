@@ -39,7 +39,15 @@
 	{#if label}
 		<label for={inputId}>{label}{#if required}<span class="required">*</span>{/if}</label>
 	{/if}
-	<select {id: inputId} {name} bind:value {disabled} {required} class="select {error ? 'invalid' : ''}">
+	<select
+		id={inputId}
+		{name}
+		bind:value={value}
+		{disabled}
+		{required}
+		class="select"
+		class:invalid={Boolean(error)}
+	>
 		<option value="" disabled={!allowEmpty}>{placeholder}</option>
 		{#each options as option (option.value)}
 			<option value={option.value}>{option.label}</option>

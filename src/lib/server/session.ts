@@ -64,14 +64,16 @@ async function supabaseAuthContext(
 	} = await supabase.auth.getUser();
 	if (!user) return null;
 
-	const { data: profile } = await supabase
+	const { data: profile } = (await supabase
 		.from('profiles')
 		.select('full_name, role, college_id')
 		.eq('id', user.id)
-		.maybeSingle();
+		.maybeSingle()) as {
+		data: { full_name?: string | null; role?: string | null; college_id?: string | null } | null;
+	};
 
-	const role = (profile?.role as Role) ?? 'COLLEGE_ADMIN';
-	const collegeId = (profile?.college_id as string | null) ?? null;
+	const role = (profile?.role as Role | undefined) ?? 'COLLEGE_ADMIN';
+	const collegeId = (profile?.college_id as string | null | undefined) ?? null;
 
 	let permissions: string[] = [];
 	try {
@@ -83,8 +85,10 @@ async function supabaseAuthContext(
 
 	let collegeIds: string[] = [];
 	try {
-		const { data } = await supabase.from('colleges').select('id');
-		collegeIds = (data ?? []).map((row) => String(row.id));
+		const result = (await supabase.from('colleges').select('id')) as {
+			data: Array<{ id: string | number }> | null;
+		};
+		collegeIds = (result.data ?? []).map((row) => String(row.id));
 	} catch {
 		collegeIds = collegeId ? [collegeId] : [];
 	}
@@ -94,8 +98,8 @@ async function supabaseAuthContext(
 
 	return {
 		userId: user.id,
-		email: user.email,
-		fullName: (profile?.full_name as string) ?? user.email ?? 'User',
+		email: user.email ?? null,
+		fullName: (profile?.full_name as string | undefined) ?? user.email ?? 'User',
 		role,
 		collegeId,
 		collegeIds,
@@ -213,9 +217,13 @@ export async function createFirstSuperAdmin(event: RequestEvent, input: {
 	if (signUpError) return { error: signUpError.message };
 	const userId = authData?.user?.id;
 	if (!userId) return { error: 'Could not create user.' };
-	const { error: profileError } = await admin
-		.from('profiles')
-		.insert({ id: userId, full_name: input.full_name, role: 'SUPER_ADMIN', college_id: null });
+	const { error: profileError } = await (admin
+		.from('profiles') as any).insert({
+		id: userId,
+		full_name: input.full_name,
+		role: 'SUPER_ADMIN',
+		college_id: null
+	});
 	if (profileError) return { error: profileError.message };
 	return { error: null };
 }

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database';
-import type { Paginated, QueryOptions } from '$lib/types';
-import { MODULES as MODULE_MAP, type ModuleConfig } from '$lib/config/modules';
+import type { ModuleConfig, Paginated, QueryOptions } from '$lib/types';
+import { MODULES as MODULE_MAP } from '$lib/config/modules';
 import * as local from './local-store';
 
 export type StorageMode = 'supabase' | 'local';
@@ -46,6 +46,10 @@ function friendlyDbError(error: { code?: string; message?: string }): Repository
 function tableSupportsSoftDelete(table: string): boolean {
 	const config = Object.values(MODULE_MAP).find((module) => module.table === table);
 	return Boolean(config?.softDelete);
+}
+
+function isTenantTable(table: string): boolean {
+	return TENANT_TABLES.has(table);
 }
 
 const TENANT_TABLES = new Set([
@@ -198,7 +202,7 @@ export async function list(
 	const supabase = ctx.supabase;
 	if (!supabase) throw new RepositoryError('DATABASE', 'Database is not available.');
 	const filters = scopedFilters(ctx, table, options);
-	let query = supabase.from(table).select('*', { count: 'exact' });
+	let query: any = supabase.from(table).select('*', { count: 'exact' });
 
 	for (const [key, value] of Object.entries(filters)) {
 		if (value === undefined) continue;
@@ -244,7 +248,7 @@ export async function getById(
 	if (!supabase) throw new RepositoryError('DATABASE', 'Database is not available.');
 	const { data, error } = await supabase.from(table).select('*').eq('id', id).maybeSingle();
 	if (error) throw friendlyDbError(error);
-	return (data as Record<string, unknown>) ?? null;
+	return (data as Record<string, unknown> | null) ?? null;
 }
 
 export async function create(
@@ -266,7 +270,10 @@ export async function create(
 	const supabase = ctx.supabase;
 	if (!supabase) throw new RepositoryError('DATABASE', 'Database is not available.');
 	if (ctx.scope.collegeId && isTenantTable(table)) data.college_id = ctx.scope.collegeId;
-	const { data: inserted, error } = await supabase.from(table).insert(data).select('*').single();
+	const { data: inserted, error } = await (supabase.from(table) as any)
+		.insert(data as Record<string, unknown>)
+		.select('*')
+		.single();
 	if (error) throw friendlyDbError(error);
 	return inserted as Record<string, unknown>;
 }
@@ -289,7 +296,11 @@ export async function update(
 	}
 	const supabase = ctx.supabase;
 	if (!supabase) throw new RepositoryError('DATABASE', 'Database is not available.');
-	const { data, error } = await supabase.from(table).update(patch).eq('id', id).select('*').single();
+	const { data, error } = await (supabase.from(table) as any)
+		.update(patch as Record<string, unknown>)
+		.eq('id', id)
+		.select('*')
+		.single();
 	if (error) throw friendlyDbError(error);
 	return data as Record<string, unknown>;
 }
@@ -315,8 +326,7 @@ export async function remove(
 	const supabase = ctx.supabase;
 	if (!supabase) throw new RepositoryError('DATABASE', 'Database is not available.');
 	if (tableSupportsSoftDelete(table)) {
-		const { error } = await supabase
-			.from(table)
+		const { error } = await (supabase.from(table) as any)
 			.update({ deleted_at: new Date().toISOString(), is_active: false })
 			.eq('id', id);
 		if (error) throw friendlyDbError(error);
