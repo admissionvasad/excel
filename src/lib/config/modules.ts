@@ -118,6 +118,25 @@ const semesterField = (overrides: Partial<ModuleField> = {}): ModuleField => ({
 });
 
 export const MODULES: Record<string, ModuleConfig> = {
+	merit: {
+		key: 'merit',
+		label: 'Merit Management',
+		group: 'Admissions & Merit',
+		table: 'merit_scores',
+		titleField: 'applicant_name',
+		searchFields: ['applicant_name', 'application_number', 'admission_type'],
+		defaultSort: { column: 'merit_index', ascending: false },
+		scoped: true,
+		fields: [
+			{ key: 'applicant_name', label: 'Applicant', type: 'text', searchable: true },
+			{ key: 'application_number', label: 'Application Number', type: 'text', searchable: true },
+			{ key: 'admission_type', label: 'Admission Type', type: 'text', filterable: true },
+			{ key: 'merit_index', label: 'Merit Index', type: 'decimal', filterable: true },
+			{ key: 'eligibility_status', label: 'Eligibility', type: 'text', filterable: true },
+			{ key: 'status', label: 'Status', type: 'text', filterable: true }
+		]
+	},
+
 	students: {
 		key: 'students',
 		label: 'Students',

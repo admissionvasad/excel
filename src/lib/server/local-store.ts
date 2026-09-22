@@ -208,7 +208,11 @@ function load(): StoreShape {
 		if (fs.existsSync(DATA_FILE)) {
 			cache = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')) as StoreShape;
 			if (!cache.collections) cache.collections = {};
-			if (!cache.users) cache.users = [];
+			if (!cache.users || cache.users.length === 0) {
+				cache = seedData();
+				persist();
+				return cache;
+			}
 			if (!cache.sessions) cache.sessions = {};
 			return cache;
 		}

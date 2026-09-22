@@ -6,6 +6,7 @@
 		size = 'md',
 		disabled = false,
 		type = 'button',
+		full = false,
 		class: className = '',
 		onclick,
 		href,
@@ -16,6 +17,7 @@
 		size?: 'sm' | 'md' | 'lg';
 		disabled?: boolean;
 		type?: 'button' | 'submit' | 'reset';
+		full?: boolean;
 		class?: string;
 		onclick?: (event: MouseEvent) => void;
 		href?: string;
@@ -23,7 +25,7 @@
 		children: Snippet;
 	} = $props();
 
-	const classes = `btn btn-${variant} ${size !== 'md' ? `btn-${size}` : ''} ${className}`;
+	const classes = `btn btn-${variant} ${size !== 'md' ? `btn-${size}` : ''} ${full ? 'btn-full' : ''} ${className}`.trim();
 </script>
 
 {#if href}

@@ -2,19 +2,25 @@ import { getContext, setContext } from 'svelte';
 
 export interface UiState {
 	sidebarOpen: boolean;
+	toggle(): void;
+	close(): void;
+	open(): void;
 }
 
-export function createUiState() {
+export function createUiState(): UiState {
 	let sidebarOpen = $state(false);
 	return {
 		get sidebarOpen() {
 			return sidebarOpen;
 		},
-		toggleSidebar() {
+		toggle() {
 			sidebarOpen = !sidebarOpen;
 		},
-		closeSidebar() {
+		close() {
 			sidebarOpen = false;
+		},
+		open() {
+			sidebarOpen = true;
 		}
 	};
 }
@@ -28,3 +34,5 @@ export function setUiContext(state = createUiState()) {
 export function getUiContext() {
 	return getContext<ReturnType<typeof createUiState>>(UI_KEY);
 }
+
+export const sidebarState = createUiState();

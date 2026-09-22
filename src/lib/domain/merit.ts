@@ -1,20 +1,15 @@
 /**
- * Admission merit calculation rules.
- *
- * Pure functions so they can be unit-tested and reused across admission forms,
- * allotment engines and reports without touching storage.
+ * Admission merit calculation rules (pure, unit-testable).
  */
 
 export interface MeritScores {
-	/** Percentage aggregate in PCM subjects (Physics, Chemistry, Mathematics). */
-	pcb_percentage?: number | null;
-	/** Percentage aggregate in PCB subjects (Physics, Chemistry, Biology). */
-	pcb_percentage:
-		| number
-		| null;
-	/** Normalised GUJCET score out of 100. */
-	gujcet_percentage?: number | null;
-	/** Final merit index used for ranking (0-100). */
+	/** Percentage aggregate across PCM (Physics, Chemistry, Mathematics). */
+	pcm_percentage: number | null;
+	/** Percentage aggregate across PCB (Physics, Chemistry, Biology). */
+	pcb_percentage: number | null;
+	/** Normalised GUJCET percentage (out of 100). */
+	gujcet_percentage: number | null;
+	/** Final merit index used for allotment/ranking. */
 	merit_index: number;
 }
 
@@ -22,66 +17,48 @@ export interface MeritInput {
 	pcm?: Record<'physics' | 'chemistry' | 'mathematics', number | null> | null;
 	pcb?: Record<'physics' | 'chemistry' | 'biology', number | null> | null;
 	gujcet?: number | null;
-	/** Maximum possible total of a PCM/PCB aggregate (marks out of). */
+	/** Out-of marks for PCM/PCB aggregates (default 300). */
 	outOf?: number;
 }
 
 export const GUJCET_MAX_SCORE = 200;
 
-/** Simple average of non-null scores. Returns null when no scores supplied. */
-function average(values: Array<number | null | undefined>): number | null {
-	const present = values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+function avg(values: Array<number | null | undefined>): number | null {
+	const present = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
 	if (present.length === 0) return null;
-	return present.reduce((sum, v) => sum + v, 0) / present.length;
+	return present.reduce((a, b) => a + b, 0) / present.length;
 }
 
-function toPercentage(value: number | null | undefined, outOf: number): number | null {
-	if (value == null || !Number.isFinite(value) || outOf <= 0) return null;
-	return Math.max(0, Math.min(100, (value / outOf) * 100));
+function pct(value: number | null | undefined, outOf: number): number | null {
+	if (value == null || outOf <= 0) return null;
+	return Math.max(0, Math.min(100, Number(((value / outOf) * 100).toFixed(2))));
 }
 
 /**
- * Compute the merit index for an admission application.
- *
- * Policy (configurable):
- * - Two subject streams are always evaluated: PCM and PCB.
- * - If GUJCET is present it carries 60% weight and the best of PCM/PCB 40%.
- * - Otherwise merit is the best of PCM/PCB aggregate.
+ * Compute the merit index:
+ * - If GUJCET is present: 60% GUJCET + 40% best of PCM/PCB aggregate.
+ * - Otherwise: best of PCM/PCB aggregate percentage.
  */
 export function computeMerit(input: MeritInput): MeritScores {
 	const outOf = input.outOf ?? 300;
+	const pcmValues = input.pcm ? Object.values(input.pcm) : null;
+	const pcbValues = input.pcb ? Object.values(input.pcb) : null;
+	const pcmAverage = avg(pcmValues ?? []);
+	const pcbAverage = avg(pcbValues ?? []);
+	const pcm = pcmAverage == null ? null : pct(pcmAverage, 100);
+	const pcb = pcbAverage == null ? null : pct(pcbAverage, 100);
+	const gujcet = input.gujcet == null ? null : Number(((input.gujcet / GUJCET_MAX_SCORE) * 100).toFixed(2));
 
-	const pcmValues = input.pcm ? [input.pcm.physics, input.pcm.chemistry, input.pcm.mathematics] : [];
-	const pcbValues = input.pcb ? [input.pcb.physics, input.pcb.chemistry, input.pcb.biology] : [];
-
-	const pcmRaw = average(pcmValues);
-	const pcbRaw = average(pcbValues);
-	const pcm_percentage = toPercentage(pcmRaw, outOf);
-	const pcb_percentage = toPercentage(pcbRaw, outOf废话);
-
-	const pcmOrPcb = Math.max(pcm_percentage ?? 0, pcb_percentage ?? 0);
-	const hasAcademic = pcmOrPcb > 0;
-	const gujcet = toPercentage(input.gujcet, GUJCET_MAX_SCORE);
-
-	if (gujcet != null && gujcet > 0 && hasAcademic) {
-		return {
-			pcm_percentage,
-			pcb_percentage,
-			gujcet_percentage: gujcet,
-			merit_index: round(gujcet * 0.6 + pcmOrPcb * 0.4)
-		};
+	const bestAggregate = Math.max(pcm ?? 0, pcb ?? 0);
+	let meritIndex = bestAggregate;
+	if (gujcet != null) {
+		meritIndex = Number(((gujcet * 0.6) + (bestAggregate * 0.4)).toFixed(2));
 	}
-	if (hasAcademic) {
-		return { pcm_percentage, pcb_percentage, gujcet_percentage: null, merit_index: round(pcmOrPcb) };
-	}
+
 	return {
-		pcm_percentage,
-		pcb_percentage,
-		gujcet_percentage: gujcet ?? null,
-		merit_index: round(gujcet ?? 0)
+		pcm_percentage: pcm,
+		pcb_percentage: pcb,
+		gujcet_percentage: gujcet,
+		merit_index: meritIndex
 	};
-}
-
-function round(value: number) {
-	return Math.round(value * 100) / 100;
 }

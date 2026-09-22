@@ -36,6 +36,10 @@ export function createThemeState() {
 		apply(value);
 	}
 
+	function toggle() {
+		set(applied === 'dark' ? 'light' : 'dark');
+	}
+
 	if (typeof window !== 'undefined') {
 		const media = window.matchMedia('(prefers-color-scheme: dark)');
 		media.addEventListener('change', () => {
@@ -51,7 +55,8 @@ export function createThemeState() {
 		get applied() {
 			return applied;
 		},
-		set
+		set,
+		toggle
 	};
 }
 
