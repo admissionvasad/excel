@@ -31,7 +31,8 @@ function avg(values: Array<number | null | undefined>): number | null {
 
 function pct(value: number | null | undefined, outOf: number): number | null {
 	if (value == null || outOf <= 0) return null;
-	return Math.max(0, Math.min(100, Number(((value / outOf) * 100).toFixed(2))));
+	const scaledValue = value <= 100 ? value : (value / outOf) * 100;
+	return Math.max(0, Math.min(100, Number((scaledValue).toFixed(2))));
 }
 
 /**
@@ -45,9 +46,9 @@ export function computeMerit(input: MeritInput): MeritScores {
 	const pcbValues = input.pcb ? Object.values(input.pcb) : null;
 	const pcmAverage = avg(pcmValues ?? []);
 	const pcbAverage = avg(pcbValues ?? []);
-	const pcm = pcmAverage == null ? null : pct(pcmAverage, 100);
-	const pcb = pcbAverage == null ? null : pct(pcbAverage, 100);
-	const gujcet = input.gujcet == null ? null : Number(((input.gujcet / GUJCET_MAX_SCORE) * 100).toFixed(2));
+	const pcm = pcmAverage == null ? null : pct(pcmAverage, outOf);
+	const pcb = pcbAverage == null ? null : pct(pcbAverage, outOf);
+	const gujcet = input.gujcet == null ? null : pct(input.gujcet, GUJCET_MAX_SCORE);
 
 	const bestAggregate = Math.max(pcm ?? 0, pcb ?? 0);
 	let meritIndex = bestAggregate;

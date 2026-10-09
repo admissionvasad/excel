@@ -15,16 +15,25 @@ export const load: PageServerLoad = async (event) => {
 	];
 
 	const positive: Record<string, unknown> = { deleted_at: undefined };
-	const statCards = [];
+	const cards = [];
 	for (const item of dashboard) {
 		const total = await repo.count(ctx, item.table, positive);
-		statCards.push({ ...item, total });
+		cards.push({
+			...item,
+			total,
+			href: `/app/${item.key}`
+		});
 	}
 
 	const quick = Object.values(MODULES)
 		.filter((m) => !m.system)
 		.slice(0, 8)
-		.map((m) => ({ key: m.key, label: m.label, icon: m.icon ?? '📁' }));
+		.map((m) => ({
+			key: m.key,
+			label: m.label,
+			icon: m.icon ?? '📁',
+			href: `/app/${m.key}`
+		}));
 
-	return { auth, statCards, quick };
+	return { auth, cards, quick };
 };
